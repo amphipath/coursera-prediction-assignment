@@ -1,0 +1,148 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Untitled Document.md</title><script type="text/javascript">
+//<![CDATA[
+window.__cfRocketOptions = {byc:0,p:0,petok:"3f794d7003bac96943403b4396bf41881918921b-1510790188-1800"};
+//]]>
+</script>
+<script type="text/javascript" src="https://ajax.cloudflare.com/cdn-cgi/scripts/0e574bed/cloudflare-static/rocket.min.js"></script>
+<style></style></head><body id="preview">
+<p>x# coursera prediction assignment</p>
+<h3><a id="Preliminaries_2"></a>Preliminaries</h3>
+<table class="table table-striped table-bordered">
+<thead>
+<tr>
+<th>Package</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>caret</td>
+<td>6.0-77</td>
+</tr>
+<tr>
+<td>e1071</td>
+<td>1.6-8</td>
+</tr>
+<tr>
+<td>ElemStatLearn</td>
+<td>2015.6.26</td>
+</tr>
+</tbody>
+</table>
+<p><code>set.seed(5318008)</code> will be used throughout</p>
+<h3><a id="Initial_view_of_data_12"></a>Initial view of data</h3>
+<p>Looking at the data in excel, majority of the data are NA’s or missing, and a huge majority of the columns are completely meaningless except specifically for rows that have <code>new_window</code> as <code>yes</code>. This probably corresponds to the start of a recording window in which the device snapshots some coordinates that would be too resource-intensive to constantly monitor.</p>
+<p>Using the time-tested trial of common sense, it then is most likely that any data point that has the same <code>num_window</code> would correspond to the same exercise motion and hence the same <code>classe</code>.</p>
+<p>To test this theory:</p>
+<pre><code class="language-r">training &lt;- read.csv(<span class="hljs-string">"plm-training.csv"</span>)
+theorytest &lt;- unique(data.frame(training$num_window,training$classe))
+length(unique(theorytest[,<span class="hljs-number">1</span>]))-length(theorytest[,<span class="hljs-number">1</span>])
+
+[<span class="hljs-number">1</span>] <span class="hljs-number">0</span>
+</code></pre>
+<p>No repeated values in <code>theorytest$num_window</code> indicates each value of <code>num_window</code> corresponds to exactly one value in <code>classe</code>. Hey, whaddya know.</p>
+<p>Supposing that the testing data was taken from the same source/experiments/exercises that the training data was, then it would be possible to predict with perfect accuracy the <code>classe</code> of all of the testing data.</p>
+<p>Just for the hell of it, let’s throw some cross validation in:</p>
+<pre><code class="language-r">train_Control &lt;- trainControl(method=<span class="hljs-string">"repeatedcv"</span>,number=<span class="hljs-number">20</span>,repeats=<span class="hljs-number">5</span>)
+perfectModel &lt;- train(classe~num_window,data=training,method=<span class="hljs-string">"ada"</span>)
+print(perfectModel)
+
+Random Forest 
+
+<span class="hljs-number">19622</span> samples
+    <span class="hljs-number">1</span> predictor
+    <span class="hljs-number">5</span> classes: <span class="hljs-string">'A'</span>, <span class="hljs-string">'B'</span>, <span class="hljs-string">'C'</span>, <span class="hljs-string">'D'</span>, <span class="hljs-string">'E'</span> 
+
+No pre-processing
+Resampling: Bootstrapped (<span class="hljs-number">25</span> reps) 
+Summary of sample sizes: <span class="hljs-number">19622</span>, <span class="hljs-number">19622</span>, <span class="hljs-number">19622</span>, <span class="hljs-number">19622</span>, <span class="hljs-number">19622</span>, <span class="hljs-number">19622</span>, <span class="hljs-keyword">...</span> 
+Resampling results:
+
+  Accuracy   Kappa   
+  <span class="hljs-number">0.9997722</span>  <span class="hljs-number">0.999712</span>
+</code></pre>
+<p>Pretty good as far as accuracy goes.</p>
+<p>As much as it would satisfy the purposes of this assignment, it would also create a model with probably one of the worst cases of overfitting and be completely inapplicable as a model to predict on future exercise data. So let’s create a model that uses some actual machine learning.</p>
+<h3><a id="Trimming_the_fat_57"></a>Trimming the fat</h3>
+<p>First thing to do if we’re to do some actual data analysis is to cut out all the nonsense columns that are related to the windows.</p>
+<pre><code class="language-r">training &lt;- training[training$new_window != <span class="hljs-string">"yes"</span>,]
+keepcolumn &lt;- vector(mode=<span class="hljs-string">"logical"</span>,length=ncol(training))
+
+<span class="hljs-keyword">for</span>(i <span class="hljs-keyword">in</span> <span class="hljs-number">1</span>:ncol(training)) {
+    <span class="hljs-keyword">for</span>(j <span class="hljs-keyword">in</span> <span class="hljs-number">1</span>:nrow(training)) {
+    <span class="hljs-keyword">if</span>(!is.na(training[j,i]) &amp; training[j,i] != <span class="hljs-string">""</span>) {
+        keepcolumn[i] &lt;- <span class="hljs-literal">TRUE</span>
+        <span class="hljs-keyword">break</span>
+        }
+    }
+}
+
+training &lt;- training[,keepcolumn]
+testing &lt;- testing[,keepcolumn]
+</code></pre>
+<p>I don’t want to keep the timestamps or windows either, so</p>
+<pre><code class="language-r">training &lt;- training[,-<span class="hljs-number">3</span>:-<span class="hljs-number">7</span>]
+testing &lt;- testing [,-<span class="hljs-number">3</span>:-<span class="hljs-number">7</span>]
+</code></pre>
+<h3><a id="A_first_model_85"></a>A first model</h3>
+<pre><code class="language-r">train_Control &lt;- trainControl(method=<span class="hljs-string">"repeatedcv"</span>,number=<span class="hljs-number">10</span>,repeats=<span class="hljs-number">3</span>)
+imperfectModel &lt;- train(classe~.,data=training[,-<span class="hljs-number">1</span>:-<span class="hljs-number">2</span>],trControl=train_Control,method=<span class="hljs-string">"nb"</span>)
+print(imperfectModel)
+
+Naive Bayes 
+
+<span class="hljs-number">19216</span> samples
+   <span class="hljs-number">52</span> predictor
+    <span class="hljs-number">5</span> classes: <span class="hljs-string">'A'</span>, <span class="hljs-string">'B'</span>, <span class="hljs-string">'C'</span>, <span class="hljs-string">'D'</span>, <span class="hljs-string">'E'</span> 
+
+No pre-processing
+Resampling: Cross-Validated (<span class="hljs-number">10</span> fold, repeated <span class="hljs-number">3</span> times) 
+Summary of sample sizes: <span class="hljs-number">17294</span>, <span class="hljs-number">17293</span>, <span class="hljs-number">17295</span>, <span class="hljs-number">17294</span>, <span class="hljs-number">17294</span>, <span class="hljs-number">17295</span>, <span class="hljs-keyword">...</span> 
+Resampling results across tuning parameters:
+
+  usekernel  Accuracy   Kappa    
+  <span class="hljs-literal">FALSE</span>      <span class="hljs-number">0.5052036</span>  <span class="hljs-number">0.3888115</span>
+   <span class="hljs-literal">TRUE</span>      <span class="hljs-number">0.7450556</span>  <span class="hljs-number">0.6740567</span>
+
+Tuning parameter <span class="hljs-string">'fL'</span> was held constant at a value of <span class="hljs-number">0</span>
+Tuning parameter <span class="hljs-string">'adjust'</span> was held constant at a value of <span class="hljs-number">1</span>
+Accuracy was used to select the optimal model using  the largest value.
+The final values used <span class="hljs-keyword">for</span> the model were fL = <span class="hljs-number">0</span>, usekernel = <span class="hljs-literal">TRUE</span> and adjust = <span class="hljs-number">1.</span>
+</code></pre>
+<p>An accuracy of 74.5% sets a lower bound of what we should go for.</p>
+<p>Trying another model:</p>
+<pre><code class="language-r">imperfectModel2 &lt;- train(classe~.,data=training[,-<span class="hljs-number">1</span>:-<span class="hljs-number">2</span>],method=<span class="hljs-string">"gbm"</span>,verbose=<span class="hljs-literal">FALSE</span>)
+print(imperfectModel2)
+</code></pre>
+<p>Using crossvalidation for gbm proved to make it take obscenely long and hence was omitted this round.</p>
+<pre><code class="language-r">Stochastic Gradient Boosting 
+
+<span class="hljs-number">19216</span> samples
+   <span class="hljs-number">52</span> predictor
+    <span class="hljs-number">5</span> classes: <span class="hljs-string">'A'</span>, <span class="hljs-string">'B'</span>, <span class="hljs-string">'C'</span>, <span class="hljs-string">'D'</span>, <span class="hljs-string">'E'</span> 
+
+No pre-processing
+Resampling: Bootstrapped (<span class="hljs-number">25</span> reps) 
+Summary of sample sizes: <span class="hljs-number">19216</span>, <span class="hljs-number">19216</span>, <span class="hljs-number">19216</span>, <span class="hljs-number">19216</span>, <span class="hljs-number">19216</span>, <span class="hljs-number">19216</span>, <span class="hljs-keyword">...</span> 
+Resampling results across tuning parameters:
+
+  interaction.depth  n.trees  Accuracy   Kappa    
+  <span class="hljs-number">1</span>                   <span class="hljs-number">50</span>      <span class="hljs-number">0.7515771</span>  <span class="hljs-number">0.6849533</span>
+  <span class="hljs-number">1</span>                  <span class="hljs-number">100</span>      <span class="hljs-number">0.8197656</span>  <span class="hljs-number">0.7718241</span>
+  <span class="hljs-number">1</span>                  <span class="hljs-number">150</span>      <span class="hljs-number">0.8522448</span>  <span class="hljs-number">0.8129752</span>
+  <span class="hljs-number">2</span>                   <span class="hljs-number">50</span>      <span class="hljs-number">0.8552716</span>  <span class="hljs-number">0.8165568</span>
+  <span class="hljs-number">2</span>                  <span class="hljs-number">100</span>      <span class="hljs-number">0.9049832</span>  <span class="hljs-number">0.8797286</span>
+  <span class="hljs-number">2</span>                  <span class="hljs-number">150</span>      <span class="hljs-number">0.9294126</span>  <span class="hljs-number">0.9106541</span>
+  <span class="hljs-number">3</span>                   <span class="hljs-number">50</span>      <span class="hljs-number">0.8956938</span>  <span class="hljs-number">0.8679085</span>
+  <span class="hljs-number">3</span>                  <span class="hljs-number">100</span>      <span class="hljs-number">0.9408040</span>  <span class="hljs-number">0.9250706</span>
+  <span class="hljs-number">3</span>                  <span class="hljs-number">150</span>      <span class="hljs-number">0.9599428</span>  <span class="hljs-number">0.9493060</span>
+
+Tuning parameter <span class="hljs-string">'shrinkage'</span> was held constant at a value of <span class="hljs-number">0.1</span>
+Tuning parameter <span class="hljs-string">'n.minobsinnode'</span> was held constant at
+ a value of <span class="hljs-number">10</span>
+Accuracy was used to select the optimal model using  the largest value.
+The final values used <span class="hljs-keyword">for</span> the model were n.trees = <span class="hljs-number">150</span>, interaction.depth = <span class="hljs-number">3</span>, shrinkage = <span class="hljs-number">0.1</span> and n.minobsinnode = <span class="hljs-number">10.</span>
+</code></pre>
+<p>We have a winner; I estimate the out-of-sample accuracy to be about 90% to take into account possible overfitting.</p>
+
+</body></html>
